@@ -564,23 +564,13 @@ elif menu == "⚡ Speed Test":
 
     
 
+
     if st.button("🚀 Start Speed Test", type="primary"):
-
-        result = None
-        error_message = None
-
         try:
             from src.collection.speed_test import run_speed_test
 
-            with st.spinner(
-                "Testing your current Internet connection..."
-            ):
+            with st.spinner("Testing internet connection..."):
                 result = run_speed_test()
-
-            if not isinstance(result, dict):
-                raise ValueError(
-                    "Speed test did not return a valid result dictionary."
-                )
 
             required_keys = [
                 "download_mbps",
@@ -588,107 +578,89 @@ elif menu == "⚡ Speed Test":
                 "latency_ms"
             ]
 
-            missing_keys = [
-                key for key in required_keys
-                if key not in result
-            ]
-
-            if missing_keys:
-                raise ValueError(
-                    f"Missing speed-test results: {missing_keys}"
-                )
+            if not all(key in result for key in required_keys):
+                raise ValueError("Speed test result is incomplete.")
 
             st.session_state["speed_test_result"] = result
-            st.session_state["signal_dbm"] = signal_dbm
+            st.session_state["speed_test_metadata"] = {
+                "operator": operator,
+                "location": location,
+                "network_type": network_type,
+                "signal_dbm": signal_dbm,
+                "timestamp": pd.Timestamp.now().strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                )
+            }
+            st.session_state.pop("measurement_saved", None)
 
         except Exception as error:
-            error_message = str(error)
+            st.error(f"Speed test failed: {error}")
 
-        if result is None:
-            st.error(f"Speed test failed: {error_message}")
+    if "speed_test_result" in st.session_state:
+        result = st.session_state["speed_test_result"]
+        metadata = st.session_state["speed_test_metadata"]
 
-        else:
-            st.success("✅ Speed test completed!")
+        st.success("✅ Speed test completed!")
 
-            col1, col2, col3 = st.columns(3)
+        col1, col2, col3 = st.columns(3)
 
-            with col1:
-                st.metric(
-                    "⬇️ Download Speed",
-                    f"{result['download_mbps']:.2f} Mbps"
-                )
+        col1.metric(
+            "⬇️ Download Speed",
+            f"{result['download_mbps']:.2f} Mbps"
+        )
+        col2.metric(
+            "⬆️ Upload Speed",
+            f"{result['upload_mbps']:.2f} Mbps"
+        )
+        col3.metric(
+            "🏓 Latency",
+            f"{result['latency_ms']:.2f} ms"
+        )
 
-            with col2:
-                st.metric(
-                    "⬆️ Upload Speed",
-                    f"{result['upload_mbps']:.2f} Mbps"
-                )
+        result_df = pd.DataFrame([{
+            "Timestamp": metadata["timestamp"],
+            "Operator": metadata["operator"],
+            "Location": metadata["location"],
+            "Network Type": metadata["network_type"],
+            "Download (Mbps)": result["download_mbps"],
+            "Upload (Mbps)": result["upload_mbps"],
+            "Latency (ms)": result["latency_ms"]
+        }])
 
-            with col3:
-                st.metric(
-                    "🏓 Latency",
-                    f"{result['latency_ms']:.2f} ms"
-                )
+        st.subheader("📋 Speed Test Result")
+        st.dataframe(result_df, use_container_width=True)
 
-            st.subheader("📋 Speed Test Result")
+        if st.button("💾 Save Measurement", type="primary",
+                     key="save_speed_measurement"):
 
-            result_df = pd.DataFrame([{
-                "Timestamp": pd.Timestamp.now().strftime(
-                    "%Y-%m-%d %H:%M:%S"
+            new_record = {
+                "timestamp": metadata["timestamp"],
+                "operator": metadata["operator"],
+                "location": metadata["location"],
+                "signal_dbm": metadata["signal_dbm"],
+                "download_mbps": result["download_mbps"],
+                "upload_mbps": result["upload_mbps"],
+                "latency_ms": result["latency_ms"],
+                "packet_loss_percent": result.get(
+                    "packet_loss_percent", None
                 ),
-                "Operator": operator,
-                "Location": location,
-                "Network Type": network_type,
-                "Download (Mbps)": result["download_mbps"],
-                "Upload (Mbps)": result["upload_mbps"],
-                "Latency (ms)": result["latency_ms"]
-            }])
+                "network_type": metadata["network_type"],
+                "device": "Laptop"
+            }
 
-            st.dataframe(
-                result_df,
-                use_container_width=True
+            latest_df = load_data()
+            latest_df = pd.concat(
+                [latest_df, pd.DataFrame([new_record])],
+                ignore_index=True
             )
 
-            
+            save_data(latest_df)
+            st.session_state["measurement_saved"] = True
+            st.success("✅ Measurement saved successfully!")
 
-            if st.button("💾 Save Measurement", type="primary"):
-                    st.write("🔵 SAVE BUTTON CLICKED")
+        if st.session_state.get("measurement_saved", False):
+            st.info("This measurement has been saved to the app's CSV file.")
 
-                    speed_result = st.session_state["speed_test_result"]
-                    speed_signal = st.session_state["signal_dbm"]
-
-                    new_record = {
-                                "timestamp": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S"),
-                                "operator": operator,
-                                "location": location,
-                                "signal_dbm": speed_signal,
-                                "download_mbps": speed_result["download_mbps"],
-                                "upload_mbps": speed_result["upload_mbps"],
-                                "latency_ms": speed_result["latency_ms"],
-                                "packet_loss_percent": speed_result["packet_loss_percent"],
-                                "network_type": network_type,
-                                "device": "Laptop"
-                            }
-                    
-
-                    # Load latest CSV data
-                    latest_df = load_data()
-
-                    # Add new record
-                    latest_df = pd.concat(
-                        [latest_df, pd.DataFrame([new_record])],
-                        ignore_index=True
-                    )
-
-                    # Save to network_data.csv
-                    save_data(latest_df)
-
-                    st.success("✅ Measurement saved successfully!")
-                    st.session_state["measurement_saved"] = True
-
-                   
-
- 
 # =========================================================
 # DASHBOARD
 # =========================================================
